@@ -1,0 +1,11 @@
+[package]
+name = "fisher"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rpassword = "7.3.1"
+sha2 = "0.10.8"
+threefish = "0.5.2"
