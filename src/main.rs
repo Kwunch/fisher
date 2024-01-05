@@ -100,11 +100,16 @@ fn main() -> FResult<()> {
         || args.contains(&"BLOWFISH".to_string()) || args.contains(&"BF".to_string())
         || args.contains(&"--bf".to_string()) || args.contains(&"--BF".to_string()) {
         block_size = 8;
-        true
+        0
+    } else if args.contains(&"twofish".to_string()) || args.contains(&"tw".to_string())
+        || args.contains(&"TWOFISH".to_string()) || args.contains(&"TW".to_string())
+        || args.contains(&"--tw".to_string()) || args.contains(&"--TW".to_string()) {
+        block_size = 16;
+        1
     } else if args.contains(&"threefish".to_string()) || args.contains(&"tf".to_string())
         || args.contains(&"THREEFISH".to_string()) || args.contains(&"TF".to_string())
         || args.contains(&"--tf".to_string()) || args.contains(&"--TF".to_string()) {
-        false
+        2
     } else {
         println!("No algorithm specified");
         print_usage();
@@ -131,20 +136,26 @@ pub(crate) fn print_usage() {
     */
 
     println!("
-        Usage: fisher [blowfish|threefish] [encrypt|decrypt] [optional block_size (threefish)] -p [paths] [optional verbose]
+        Usage: fisher [blowfish|twofish|threefish] [encrypt|decrypt] [optional block_size (threefish)] -p [paths] [optional verbose]
         fisher --help | -h: Print detailed help message
     ");
 }
 
 pub(crate) fn print_help() {
     println!("
-        Fisher - Encrypt or Decrypt Files and Directories
+        Fisher - Encrypt or Decrypt Files and Directories Using One of Three Algorithms
+        - Blowfish
+        - Twofish
+        - Threefish
+
         Author: Kwunch
 
         Rust encryption program.
-        Supports Blowfish and Threefish
-        Threefish supports 256, 512, and 1024 bit block sizes
+        Supports Blowfish, Twofish, and Threefish
         Blowfish is standard 64 bit block size
+        Twofish is standard 128 bit block size
+        Threefish supports 256, 512, and 1024 bit block sizes
+            * Default block size for Threefish is 1024
 
         Block size should be passed as bytes, so 256 = 32, 512 = 64, 1024 = 128
 
@@ -152,18 +163,21 @@ pub(crate) fn print_help() {
         Any string after -p will be treated as a path to encrypt or decrypt
         Recommended to put -p at the end of the command to avoid args being mistaken as paths
 
-        Threefish Encrypt and Decrypt Example:
-            Encrypt: fisher --tf encrypt 32 -p file.txt
-            Decrypt: fisher --tf decrypt 32 -p file.txt
-
         Blowfish Encrypt and Decrypt Example:
             Encrypt: fisher --bf encrypt -p file.txt
             Decrypt: fisher --bf decrypt -p file.txt
 
-        - Default block size for Threefish is 1024
+        Twofish Encrypt and Decrypt Example:
+            Encrypt: fisher --tw encrypt -p file.txt
+            Decrypt: fisher --tw decrypt -p file.txt
+
+        Threefish Encrypt and Decrypt Example:
+            Encrypt: fisher --tf encrypt 32 -p file.txt
+            Decrypt: fisher --tf decrypt 32 -p file.txt
 
         Args:
             blowfish  | bf | --bf: Use Blowfish
+            twofish   | tw | --tw: Use Twofish
             threefish | tf | --tf: Use Threefish
             encrypt   | e: Encrypt the given file or directory
             decrypt   | d: Decrypt the given file or directory

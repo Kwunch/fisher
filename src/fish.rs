@@ -20,7 +20,7 @@ pub(crate) struct Fisher {
 }
 
 impl Fisher {
-    pub(crate) fn new(algorithm: bool, crypt: bool, paths: Vec<PathBuf>, passphrase: String, block_size: usize, verbose: bool) -> FResult<Fisher> {
+    pub(crate) fn new(algorithm: u8, crypt: bool, paths: Vec<PathBuf>, passphrase: String, block_size: usize, verbose: bool) -> FResult<Fisher> {
         /*
             * Create a new Fisher Instance
 

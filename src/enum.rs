@@ -8,11 +8,13 @@ use sha2::{Digest, Sha256, Sha512};
 use sha2::digest::core_api::Block;
 use threefish::{cipher::KeyInit, Threefish1024, Threefish256, Threefish512};
 use threefish::cipher::{BlockDecrypt, BlockEncrypt};
+use twofish::Twofish;
 
 use crate::FResult;
 
 pub(crate) enum Fishers {
     Blowfish(Blowfish),
+    Twofish(Twofish),
     Threefish256(Threefish256),
     Threefish512(Threefish512),
     Threefish1024(Threefish1024),
@@ -34,6 +36,12 @@ impl Fishers {
                 blowfish.encrypt_block(&mut bf_block);
 
                 *block = bf_block.to_vec();
+            }
+            Fishers::Twofish(twofish) => {
+                let mut tf_block = Block::<Twofish>::clone_from_slice(&block);
+                twofish.encrypt_block(&mut tf_block);
+
+                *block = tf_block.to_vec();
             }
             Fishers::Threefish256(threefish) => {
                 let mut tf_block = Block::<Threefish256>::clone_from_slice(&block);
@@ -73,6 +81,12 @@ impl Fishers {
 
                 *block = bf_block.to_vec();
             }
+            Fishers::Twofish(twofish) => {
+                let mut tf_block = Block::<Twofish>::clone_from_slice(&block);
+                twofish.decrypt_block(&mut tf_block);
+
+                *block = tf_block.to_vec();
+            }
             Fishers::Threefish256(threefish) => {
                 let mut tf_block = Block::<Threefish256>::clone_from_slice(&block);
                 threefish.decrypt_block(&mut tf_block);
@@ -97,7 +111,7 @@ impl Fishers {
     }
 }
 
-pub(crate) fn generate_key(alg: bool, block_size: usize, passphrase: String) -> FResult<Fishers> {
+pub(crate) fn generate_key(alg: u8, block_size: usize, passphrase: String) -> FResult<Fishers> {
     /*
         * Generate a Key from the Given Passphrase
 
@@ -120,7 +134,7 @@ pub(crate) fn generate_key(alg: bool, block_size: usize, passphrase: String) -> 
     };
 
     match alg {
-        true => {
+        0 => {
             let mut hasher = Sha512::default();
             hasher.update(passphrase.as_bytes());
             let hash = hasher.finalize();
@@ -130,7 +144,14 @@ pub(crate) fn generate_key(alg: bool, block_size: usize, passphrase: String) -> 
 
             Ok(Fishers::Blowfish(Blowfish::new(Key::<Blowfish>::from_slice(hash))))
         }
-        false => {
+        1 => {
+            let mut hasher = Sha256::default();
+            hasher.update(passphrase.as_bytes());
+            let hash = hasher.finalize();
+
+            Ok(Fishers::Twofish(Twofish::new(Key::<Twofish>::from_slice(hash.as_slice()))))
+        }
+        2 => {
             match block_size {
                 32 => {
                     /* Create 256 bit hash of the passphrase */
@@ -166,6 +187,9 @@ pub(crate) fn generate_key(alg: bool, block_size: usize, passphrase: String) -> 
                     Err("Invalid block size".into())
                 }
             }
+        }
+        _ => {
+            Err("Invalid algorithm".into())
         }
     }
 }
