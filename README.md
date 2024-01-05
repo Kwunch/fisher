@@ -1,5 +1,6 @@
 # fisher
 Rust encryption program. Supports Blowfish and Threefish encryption
+#
 
 
 Blowfish is 64bit block size with 448bit Key Length.
