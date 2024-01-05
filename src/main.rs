@@ -1,11 +1,14 @@
+use std::error::Error;
 use std::path::PathBuf;
 
 use rpassword;
 
-use crate::fish::*;
+use crate::fish::Fisher;
 
-mod fish;
 mod r#enum;
+mod fish;
+
+pub(crate) type FResult<T> = Result<T, Box<dyn Error>>;
 
 const BLOCK_SIZES: [usize; 3] = [32, 64, 128];
 
@@ -35,7 +38,7 @@ fn main() -> FResult<()> {
     /* Get index of '--BLOCKSIZE' and add 1 to get index of block size */
     let block_size_index = args.iter().position(|x| x == "--BLOCKSIZE" || x == "-B"
         || x == "--blocksize" || x == "-b");
-    let block_size = if block_size_index.is_some() {
+    let mut block_size = if block_size_index.is_some() {
         let bit_size = args[block_size_index.unwrap() + 1].parse::<usize>().unwrap();
         match bit_size {
             256 => 32,
@@ -68,6 +71,9 @@ fn main() -> FResult<()> {
     /* Check if paths are valid */
     for path in tmp_paths {
         if !std::path::Path::new(&path).exists() {
+            if path == "-v" || path == "-V" || path == "--verbose" || path == "--VERBOSE" {
+                continue;
+            }
             println!("Path '{:?}' does not exist", path);
             return Ok(());
         } else {
@@ -77,6 +83,10 @@ fn main() -> FResult<()> {
         }
     }
 
+    /* Check if verbose is requested */
+    let verbose: bool = args.contains(&"--verbose".to_string()) || args.contains(&"-v".to_string())
+        || args.contains(&"--VERBOSE".to_string()) || args.contains(&"-V".to_string());
+
     /* Get password */
     let password = rpassword::prompt_password("Enter Password -> ").unwrap();
     /* Check if password is empty or if blank */
@@ -85,11 +95,83 @@ fn main() -> FResult<()> {
         return Ok(());
     }
 
+    /* Get algorithm */
+    let algorithm = if args.contains(&"blowfish".to_string()) || args.contains(&"bf".to_string())
+        || args.contains(&"BLOWFISH".to_string()) || args.contains(&"BF".to_string())
+        || args.contains(&"--bf".to_string()) || args.contains(&"--BF".to_string()) {
+        block_size = 8;
+        true
+    } else if args.contains(&"threefish".to_string()) || args.contains(&"tf".to_string())
+        || args.contains(&"THREEFISH".to_string()) || args.contains(&"TF".to_string())
+        || args.contains(&"--tf".to_string()) || args.contains(&"--TF".to_string()) {
+        false
+    } else {
+        println!("No algorithm specified");
+        print_usage();
+        return Ok(());
+    };
+
     /* Create fisher instance */
-    let fisher: &'static Fisher = Box::leak(Box::new(Fisher::new(crypt, paths, password, block_size)?));
+    let fisher: &'static Fisher =
+        Box::leak(Box::new(Fisher::new(algorithm, crypt, paths, password.to_string(), block_size, verbose)?));
 
     /* Run fisher */
     fisher.run()?;
 
+    /* Notify user that fisher is done */
+    println!("Finished!");
+
     Ok(())
+}
+
+
+pub(crate) fn print_usage() {
+    /*
+        * Print the Usage Message
+    */
+
+    println!("
+        Usage: fisher [blowfish|threefish] [encrypt|decrypt] [optional block_size (threefish)] -p [paths] [optional verbose]
+        fisher --help | -h: Print detailed help message
+    ");
+}
+
+pub(crate) fn print_help() {
+    println!("
+        Fisher - Encrypt or Decrypt Files and Directories
+        Author: Kwunch
+
+        Rust encryption program.
+        Supports Blowfish and Threefish
+        Threefish supports 256, 512, and 1024 bit block sizes
+        Blowfish is standard 64 bit block size
+
+        Block size should be passed as bytes, so 256 = 32, 512 = 64, 1024 = 128
+
+        Usage: fisher [encrypt|decrypt] [optional block_size] -p [paths]
+        Any string after -p will be treated as a path to encrypt or decrypt
+        Recommended to put -p at the end of the command to avoid args being mistaken as paths
+
+        Threefish Encrypt and Decrypt Example:
+            Encrypt: fisher --tf encrypt 32 -p file.txt
+            Decrypt: fisher --tf decrypt 32 -p file.txt
+
+        Blowfish Encrypt and Decrypt Example:
+            Encrypt: fisher --bf encrypt -p file.txt
+            Decrypt: fisher --bf decrypt -p file.txt
+
+        - Default block size for Threefish is 1024
+
+        Args:
+            blowfish  | bf | --bf: Use Blowfish
+            threefish | tf | --tf: Use Threefish
+            encrypt   | e: Encrypt the given file or directory
+            decrypt   | d: Decrypt the given file or directory
+            -p: The paths to encrypt or decrypt
+
+        Flags:
+            --help       | -h: Print this help message
+            --version    | -v: Toggles verbose mode
+            --BLOCK_SIZE | -B : The block size to use
+    ")
 }

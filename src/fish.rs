@@ -6,48 +6,44 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 
-use sha2::{Digest, Sha256, Sha512};
-use threefish::{Threefish1024, Threefish256, Threefish512};
-use threefish::cipher::{Key, KeyInit};
-
-use crate::r#enum::Threefisher;
+use crate::r#enum::{Fishers, generate_key};
 
 pub(crate) type FResult<T> = Result<T, Box<dyn Error>>;
-
 
 pub(crate) struct Fisher {
     block_size: usize,
     crypt: bool,
-    fisher: Threefisher,
-    path: Vec<PathBuf>,
+    fisher: Fishers,
+    paths: Vec<PathBuf>,
+    verbose: bool,
     threads: Mutex<Vec<JoinHandle<()>>>,
 }
 
 impl Fisher {
-    pub(crate) fn new(crypt: bool, path: Vec<PathBuf>, passphrase: String, block_size: usize) -> FResult<Fisher> {
+    pub(crate) fn new(algorithm: bool, crypt: bool, paths: Vec<PathBuf>, passphrase: String, block_size: usize, verbose: bool) -> FResult<Fisher> {
         /*
             * Create a new Fisher Instance
 
             @param crypt: bool
                 * Whether to encrypt or decrypt
-            @param path: PathBuf
+            @param paths: PathBuf
                 * The path to the file or directory to encrypt or decrypt
             @param passphrase: String
                 * The passphrase to encrypt or decrypt with
             @return FResult: Result<Fisher, Box<dyn Error>>
                 * The Fisher instance or some Error
         */
-
         Ok(Fisher {
             block_size,
             crypt,
-            fisher: generate_key(block_size, passphrase)?,
-            path,
+            fisher: generate_key(algorithm, block_size, passphrase)?,
+            paths,
             threads: Mutex::new(Vec::new()),
+            verbose,
         })
     }
 
-    pub(crate) fn run(&'static self) -> FResult<()> {
+    pub(crate) fn run(&'static self) -> crate::FResult<()> {
         /*
             * Run the Fisher on the Given Path
 
@@ -55,12 +51,14 @@ impl Fisher {
             @return FResult: Result<(), Box<dyn Error>>
         */
 
-        for path in &self.path {
+        for path in &self.paths {
             let path = path.clone();
             match path.is_dir() {
                 /* Iterate over the directory */
                 true => {
-                    println!("Got directory: {:?}", path);
+                    if self.verbose {
+                        println!("Got directory: {:?}", path);
+                    }
                     /* Create new thread to run the directory */
                     {
                         let mut threads = self.threads.lock().unwrap();
@@ -72,7 +70,9 @@ impl Fisher {
                 }
                 /* Modify the file */
                 false => {
-                    println!("Got file: {:?}", path);
+                    if self.verbose {
+                        println!("Got file: {:?}", path);
+                    }
                     self.modify_file(&path)?;
                 }
             }
@@ -101,7 +101,7 @@ impl Fisher {
         Ok(())
     }
 
-    fn iter_dir(&'static self, path: PathBuf) -> FResult<()> {
+    fn iter_dir(&'static self, path: PathBuf) -> crate::FResult<()> {
         /*
             * Run the Fisher on the Given Directory
 
@@ -118,8 +118,9 @@ impl Fisher {
 
             match module.path().is_dir() {
                 true => {
-                    println!("Got subdirectory: {:?}", module.path());
-
+                    if self.verbose {
+                        println!("Got subdirectory: {:?}", module.path());
+                    }
                     /* Create new thread to run the subdirectory */
                     {
                         let mut threads = self.threads.lock().unwrap();
@@ -136,7 +137,9 @@ impl Fisher {
                         continue;
                     }
 
-                    println!("Got file: {:?}", module.path());
+                    if self.verbose {
+                        println!("Got file: {:?}", module.path());
+                    }
 
                     /* Run modify_file() on the file */
                     self.modify_file(&module.path())?;
@@ -147,7 +150,7 @@ impl Fisher {
         Ok(())
     }
 
-    fn modify_file(&'static self, path: &PathBuf) -> FResult<()> {
+    fn modify_file(&'static self, path: &PathBuf) -> crate::FResult<()> {
         /*
             * Modify [Encrypt or Decrypt] the Given File
 
@@ -222,112 +225,3 @@ impl Fisher {
     }
 }
 
-/*
-    * Helper Functions
-
-    * Generate a Key from the Given Passphrase
-    * Print the Usage Message
-    * Print the Help Message
-*/
-
-fn generate_key(block_size: usize, passphrase: String) -> FResult<Threefisher> {
-    /*
-        * Generate a Key from the Given Passphrase
-
-        @param self: Fisher Instance
-        @param passphrase: String
-            * The passphrase to generate the key from
-        @return FResult: Result<Key, Box<dyn Error>>
-            * The generated key or some Error
-    */
-
-    /* Check if passphrase is actually a file, if so read the file and use that as the passphrase */
-    let passphrase = match PathBuf::from(&passphrase).is_file() {
-        true => {
-            let mut file = File::open(passphrase)?;
-            let mut passphrase = String::new();
-            file.read_to_string(&mut passphrase)?;
-            passphrase
-        }
-        false => passphrase
-    };
-
-    match block_size {
-        32 => {
-            /* Create 256 bit hash of the passphrase */
-            let mut hasher = Sha256::default();
-            hasher.update(passphrase.as_bytes());
-            let hash = hasher.finalize();
-            Ok(Threefisher::Threefish256(Threefish256::new(Key::<Threefish256>::from_slice(hash.as_slice()))))
-        }
-        64 => {
-            /* Create 512 bit hash of the passphrase */
-            let mut hasher = Sha512::default();
-            hasher.update(passphrase.as_bytes());
-            let hash = hasher.finalize();
-            Ok(Threefisher::Threefish512(Threefish512::new(Key::<Threefish512>::from_slice(hash.as_slice()))))
-        }
-        128 => {
-            /* Create 1024 bit hash of the passphrase */
-            /* Combines 512 hash of original passphrase with 512 hash of the 512 hash */
-            let mut hasher = Sha512::default();
-            hasher.update(passphrase.as_bytes());
-            let hash = hasher.finalize();
-            let mut cct_hasher = Sha512::default();
-            cct_hasher.update(hash.as_slice());
-            let cct_hash = cct_hasher.finalize();
-            /* Combine the two hashes */
-            let mut combined_hash: [u8; 128] = [0; 128];
-            combined_hash[..64].clone_from_slice(hash.as_slice());
-            combined_hash[64..].clone_from_slice(cct_hash.as_slice());
-            Ok(Threefisher::Threefish1024(Threefish1024::new(Key::<Threefish1024>
-            ::from_slice(combined_hash.as_slice()))))
-        }
-        _ => {
-            Err("Invalid block size".into())
-        }
-    }
-}
-
-
-pub(crate) fn print_usage() {
-    /*
-        * Print the Usage Message
-    */
-
-    println!("
-        Usage: fisher [encrypt|decrypt] [optional block_size] -p [paths]
-        fisher --help | -h: Print detailed help message
-    ");
-}
-
-pub(crate) fn print_help() {
-    println!("
-        Fisher - Encrypt or Decrypt Files and Directories
-        Author: Kwunch
-
-        Threefish encryption implementation in Rust
-        Supports 256, 512, and 1024 bit block sizes
-
-        Block size should be passed as bytes, so 256 = 32, 512 = 64, 1024 = 128
-
-        Usage: fisher [encrypt|decrypt] [optional block_size] -p [paths]
-        Any string after -p will be treated as a path to encrypt or decrypt
-        Recommended to put -p at the end of the command to avoid args being mistaken as paths
-
-        Example: fisher encrypt password 32 -p file.txt
-        Example: fisher decrypt password -p file.txt
-
-        - Default block size is 1024
-
-        Args:
-            encrypt | e: Encrypt the given file or directory
-            decrypt | d: Decrypt the given file or directory
-            -p: The paths to encrypt or decrypt
-
-        Flags:
-            --help | -h: Print this help message
-            --version | -v: Print the version
-            --BLOCK_SIZE | -B : The block size to use
-    ")
-}
